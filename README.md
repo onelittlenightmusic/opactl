@@ -1,6 +1,6 @@
 # opactl
 
-git init
+`opactl` executes your own Rego (OPA) policy as CLI command. 
 
 This is how it works. You define a rule in OPA policy, for example `rule1`. Then, `opactl` detects your rule and turns it into subcommand such as `opactl rule1`.
 
@@ -98,4 +98,32 @@ directory:
 base: data.opactl
 parameter:
 - item=1
+```
+
+## Define your rule
+
+- [Rules - Policy Language (Open Policy Agent)](https://www.openpolicyagent.org/docs/latest/policy-language/#rules)
+  - Rules are virtual document in OPA. Rules allows users to generate objects, sets, arrays, functions and so on. 
+
+```rego
+# object
+get_test_object = {
+  "test": "test"
+}
+
+get_first_line = rtn {
+  rtn := input.stdin[0]
+} else = {}
+# To define default return value is strongly recommended.
+
+# set (Kind of list. Elements are unique. No order.)
+select_unique_lines[rtn] {
+  rtn := input.stdin[_]
+}
+
+# array (Kind of list. Elements are not necessary unique. The order is preserved.)
+lines = [rtn|
+  rtn := input.stdin[_]
+]
+
 ```
