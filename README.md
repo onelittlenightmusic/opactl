@@ -1,6 +1,6 @@
 # opactl
 
-`opactl` executes your own OPA policy as command. 
+git init
 
 This is how it works. You define a rule in OPA policy, for example `rule1`. Then, `opactl` detects your rule and turns it into subcommand such as `opactl rule1`.
 
@@ -34,6 +34,31 @@ ls -l | opactl -i filter -p mod="-rwxr-xr-x"
 ]
 ```
 
+## Installation
+
+Build from source
+
+```sh
+go build
+sudo cp opactl /usr/local/bin/
+```
+
+### Enable shell completion
+
+```sh
+# bash
+source <(opactl completion bash)
+# zsh
+opactl completion zsh > /usr/local/share/zsh/site-functions/_opactl
+```
+
+`opactl` autocompletes the subcommands.
+
+```sh
+opactl <tab>
+hierarchy visibility ..(as many rules as you define)
+```
+
 ## Options
 
 ```
@@ -47,6 +72,18 @@ Flags:
   -p, --parameter strings   parameter (key=value)
   -q, --query string        Input your own query script (example: { rtn | rtn := 1 }
   -v, --verbose             Toggle verbose mode on/off
+```
+
+Usage example)
+
+```sh
+opactl -a
+# all rules should be listed.
+[
+  "filter",
+  "hierarchy",
+  "visibility"
+]
 ```
 
 ## Configuration
