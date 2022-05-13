@@ -6,6 +6,10 @@ This is how it works. You define a rule in OPA policy, for example `rule1`. Then
 
 Options are supported for various usage. Also, you can preset configuration file, then `opactl` reads it.
 
+## Prerequisite
+
+- CLI `opa` is used in `opactl`. You can install `opa` following [Running OPA](https://www.openpolicyagent.org/docs/latest/#running-opa).
+
 ## Execute a rule as subcommand
 
 When you define a rule `filter` as follows, 
