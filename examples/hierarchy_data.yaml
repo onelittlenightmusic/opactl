@@ -1,0 +1,21 @@
+sample_data:
+  pods:
+    nginx:
+      label:
+        app: frontend
+        access: https
+    mysql:
+      label:
+        app: backend
+    mariadb:
+      label:
+        app: backend
+    postgresql:
+      label:
+        app: backend
+    nodejs:
+      label:
+        app: frontend
+    python3:
+      label:
+        app: analytics

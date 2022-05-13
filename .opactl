@@ -1,0 +1,5 @@
+directory:
+- examples
+# base: data.opactl
+# parameter:
+# - item=1
