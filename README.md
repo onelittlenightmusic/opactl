@@ -131,3 +131,46 @@ lines = [rtn|
 ]
 
 ```
+
+## Advanced techniques
+
+### 1. Shorthand of subcommand
+
+If you have `cmd1` subcommand, you can create shorthand `c1` by adding the last one line.
+
+```rego
+package opactl
+
+cmd1 = ...
+
+c1 = cmd1
+```
+
+We can execute shorthand like this.
+
+```sh
+opactl c1 (= opactl cmd1)
+```
+
+### 2. Hierarchy of subcommand/subsubcommand and so on
+
+- **Subcommand**
+
+  You can create subcommand `opactl cmd1` by creating a rule `cmd1`.
+- **Subsubcommand**
+
+  when you need subsubcommand `opactl cmd2 cmd21` under the subcommand `opactl cmd2`, you can create a package `package opactl.cmd2` and create a rule `cmd21` under this package.
+- **Subsubsubcommand**
+
+  We can create subsubsubcommand such as `opactl cmd2 cmd22 cmd221` in the same way by creating `package opactl.cmd2.cmd22`.
+
+Let's compare these hierarchical patterns.
+
+```
+package opactl
+├── rule cmd1  (this works as `opactl cmd1`)
+├── package opactl.cmd2
+│   ├── rule cmd21  (this works as `opactl cmd2 cmd21`)
+│   └── package opactl.cmd2.cmd22  
+│       └── rule cmd221 (this works as `opactl cmd2 cmd22 cmd221`)
+```
