@@ -175,3 +175,12 @@ package opactl
 │   └── package opactl.cmd2.cmd22  
 │       └── rule cmd221 (this works as `opactl cmd2 cmd22 cmd221`)
 ```
+
+### 3. Supecial command for relative path
+
+`.` and `..` are supported to get all data in current path and parent path respectively.
+
+```sh
+opactl .  (= show base path data.opactl)
+opactl lines .. (=show base path data.opactl, which is parent of lines)
+```

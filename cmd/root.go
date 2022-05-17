@@ -37,13 +37,9 @@ var directories []string
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "opactl",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "opactl executes your own Rego (OPA) policy as CLI command.",
+	Long: `You define a rule in OPA policy, for example "rule1". 
+	Then, "opactl" detects your rule and turns it into subcommand such as "opactl rule1".`,
 
 	//Args: cobra.MinimumNArgs(1),
 	Args: func(cmd *cobra.Command, args []string) error {
@@ -57,6 +53,9 @@ to quickly create a Cobra application.`,
 		// fmt.Println("args", args)
 		// fmt.Println("toComplete", toComplete)
 		strList := execAll(args)
+		if toComplete == "." {
+			strList = append(strList, ".", "..")
+		}
 		// fmt.Println("strList", strList)
 		return strList, cobra.ShellCompDirectiveNoFileComp
 	},
@@ -163,10 +162,11 @@ func execOpa(commands []string, allFlag bool, query string, stdout, stderr *byte
 	// Prepare paths and query
 	basePath := viper.GetString("base")
 	if basePath != "" {
-		c = append([]string{basePath}, c...)
+		c = append(strings.Split(basePath, "."), c...)
 	}
-	policyPath := strings.Join(c, ".")
-	lastPath := c[len(c)-1]
+	abstractPathArray := getAbstractPathArray(c)
+	policyPath := strings.Join(abstractPathArray, ".")
+	lastPath := abstractPathArray[len(abstractPathArray)-1]
 	q := query
 	if q == "" {
 		q = lastPath
@@ -230,4 +230,23 @@ func printVerbose(verbose bool, label string, log ...string) {
 	if verbose {
 		fmt.Println(label, log)
 	}
+}
+
+func getAbstractPathArray(words []string) []string {
+	rtn := []string{}
+	for _, word := range words {
+		// fmt.Println("word", word)
+		if word == ".." {
+			if len(rtn) > 1 {
+				rtn = rtn[:len(rtn)-1]
+			}
+		} else if word == "." {
+		} else {
+			if strings.Contains(word, ".") {
+				log.Fatal(`[ERROR] Arguments cannot contain "." except "." and ".."`)
+			}
+			rtn = append(rtn, word)
+		}
+	}
+	return rtn
 }
