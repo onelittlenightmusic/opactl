@@ -76,7 +76,7 @@ Flags:
   -i, --input               Accept stdin as input.stdin
   -p, --parameter strings   parameter (key=value)
   -q, --query string        Input your own query script (example: { rtn | rtn := 1 }
-  -v, --verbose             Toggle verbose mode on/off
+  -v, --verbose             Toggle verbose mode on/off (display print() output)
 ```
 
 Usage example)

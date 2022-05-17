@@ -100,7 +100,7 @@ func init() {
 	// rootCmd.PersistentFlags().StringSliceP("precommand", "P", []string{}, "precommand")
 	// viper.BindPFlag("precommand", rootCmd.PersistentFlags().Lookup("precommand"))
 
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Toggle verbose mode on/off")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Toggle verbose mode on/off (display print() output)")
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
