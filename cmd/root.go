@@ -72,8 +72,8 @@ to quickly create a Cobra application.`,
 			log.Fatal(err)
 		}
 
-		if stderr.Len() >0 {
-			log.Fatal(stderr.String())
+		if viper.GetBool("verbose") {
+			fmt.Println(stderr.String())
 		}
 
 		fmt.Println(out.String())
