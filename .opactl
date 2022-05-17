@@ -1,7 +1,7 @@
-# directory:
-# - examples
+directory:
+- examples
 # base: data.opactl
 # parameter:
 # - item=1
-bundle:
-- examples.bundle.tar.gz
+# bundle:
+# - examples.bundle.tar.gz

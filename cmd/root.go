@@ -172,7 +172,18 @@ func execOpa(commands []string, allFlag bool, query string, stdout, stderr *byte
 		q = lastPath
 	}
 	if allFlag {
-		q = "{key|"+lastPath+"[key]; not startswith(key, \"__\")}"
+		queryTemplate := `
+		{	desc |
+			%s[key]
+			not startswith(key, "__")
+			field_comment_path := concat("", ["__", key])
+			field_comment := object.get(%s, field_comment_path, "")
+			package_comment_path := [key, "__comment"]
+			package_comment := object.get(%s, package_comment_path, "")
+			desc := concat("", [key, "\t", field_comment, package_comment])
+		}
+		`
+		q = fmt.Sprintf(queryTemplate, lastPath, lastPath, lastPath)
 	}
 
 	// Prepare directories

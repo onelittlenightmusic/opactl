@@ -2,7 +2,7 @@
 
 `opactl` executes your own Rego (OPA) policy as CLI command. 
 
-This is how it works. You define a rule in OPA policy, for example `rule1`. Then, `opactl` detects your rule and turns it into subcommand such as `opactl rule1`.
+This is how it works. You define a rule in OPA policy, for example `rule1`. Then, `opactl` detects your rule and turns it into subcommand such as `opactl rule1`. It also supports completion with `tab` key.
 
 Options are supported for various usage. Also, you can preset configuration file, then `opactl` reads it.
 
@@ -184,3 +184,45 @@ package opactl
 opactl .  (= show base path data.opactl)
 opactl lines .. (=show base path data.opactl, which is parent of lines)
 ```
+
+### 4. Description for completion
+
+You can define a description for each subcommand. 
+
+When you trigger subcommand completion, each option can have a description. For example, subcommand `visibility` has a description `Example of how to use invisible field...`.
+
+```sh
+$ opactl <tab>
+completion           -- Generate completion script
+filter               -- Filter ls output with mode label (parameter mod="-rwxr-xr-x")
+help                 -- Help about any command
+visibility           -- Example of how to use invisible field __ and comments
+```
+
+Descriptions can be written as `__comment` under a package, or `__<fieldname>` next to a field.
+([Example](./examples/visibility.rego))
+
+```rego
+package opactl.visibility
+
+# A comment for subcommand "visibility" 
+__comment = "Example of how to use invisible field __ and comments"
+
+# A comment for subsubcommand "artist"
+__artist = "Get data from __config field"
+artist = __config.artist
+
+# A comment for subsubcommand "song_id"
+__song_id = "Get id of song"
+song_id = 1
+
+# A comment for subsubcommand "song"
+__song = "Get a song specified with song_id"
+song = __config.songs[song_id]
+```
+
+Example) Outputs of completion
+
+![](img/2022-05-16-23-19-18.png)
+
+![](img/2022-05-16-23-18-59.png)
