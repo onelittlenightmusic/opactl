@@ -65,11 +65,15 @@ to quickly create a Cobra application.`,
 		// Prepare commands
 		commands := args[:]
 		allFlag := viper.GetBool("all")
-		var out bytes.Buffer
+		var out, stderr bytes.Buffer
 
-		err := execOpa(commands, allFlag, viper.GetString("query"), &out)
+		err := execOpa(commands, allFlag, viper.GetString("query"), &out, &stderr)
 		if err != nil {
 			log.Fatal(err)
+		}
+
+		if stderr.Len() >0 {
+			log.Fatal(stderr.String())
 		}
 
 		fmt.Println(out.String())
@@ -85,11 +89,13 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.opactl.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is <current directory>/.opactl)")
 	rootCmd.PersistentFlags().StringSliceP("parameter", "p", []string{}, "parameter (key=value)")
 	viper.BindPFlag("parameter", rootCmd.PersistentFlags().Lookup("parameter"))
-		rootCmd.PersistentFlags().StringSliceP("directory", "d", []string{}, "directories")
+	rootCmd.PersistentFlags().StringSliceP("directory", "d", []string{}, "directories")
 	viper.BindPFlag("directory", rootCmd.PersistentFlags().Lookup("directory"))
+	rootCmd.PersistentFlags().StringSliceP("bundle", "b", []string{}, "bundles")
+	viper.BindPFlag("bundle", rootCmd.PersistentFlags().Lookup("bundle"))
 
 	// rootCmd.PersistentFlags().StringSliceP("precommand", "P", []string{}, "precommand")
 	// viper.BindPFlag("precommand", rootCmd.PersistentFlags().Lookup("precommand"))
@@ -104,7 +110,7 @@ func init() {
 	viper.BindPFlag("input", rootCmd.Flags().Lookup("input"))
 	rootCmd.Flags().StringP("query", "q", "", "Input your own query script (example: { rtn | rtn := 1 }")
 	viper.BindPFlag("query", rootCmd.Flags().Lookup("query"))
-	rootCmd.Flags().StringP("base", "b", "data.opactl", "OPA base path which will be evaluated")
+	rootCmd.Flags().StringP("base", "B", "data.opactl", "OPA base path which will be evaluated")
 	viper.BindPFlag("base", rootCmd.Flags().Lookup("base"))
 }
 
@@ -150,7 +156,7 @@ func parseParam(params []string, stdin bool) map[string]interface{} {
 	return rtn
 }
 
-func execOpa(commands []string, allFlag bool, query string, out *bytes.Buffer) error {
+func execOpa(commands []string, allFlag bool, query string, stdout, stderr *bytes.Buffer) error {
 	verbose := viper.GetBool("verbose")
 	c := commands
 
@@ -174,6 +180,12 @@ func execOpa(commands []string, allFlag bool, query string, out *bytes.Buffer) e
 	printVerbose(verbose, "directory setting is", viper.GetStringSlice("directory")...)
 	
 	opts := []string{"eval"}
+
+	bundles := viper.GetStringSlice("bundle")
+	for _, b := range bundles {
+		opts = append(opts, "-b")
+		opts = append(opts, b)
+	}
 	for _, d := range directories {
 		opts = append(opts, "-d")
 		opts = append(opts, d)
@@ -189,17 +201,17 @@ func execOpa(commands []string, allFlag bool, query string, out *bytes.Buffer) e
 		return err
 	}
 
-	cmdExec.Stdout = out
-
+	cmdExec.Stdout = stdout
+	cmdExec.Stderr = stderr
 	err = cmdExec.Run()
 
 	return err
 }
 
 func execAll(commands []string) []string {
-	var out bytes.Buffer
+	var out, stderr bytes.Buffer
 
-	err := execOpa(commands, true, "", &out)
+	err := execOpa(commands, true, "", &out, &stderr)
 	if err != nil {
 		log.Fatal(err)
 	}

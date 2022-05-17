@@ -68,8 +68,9 @@ hierarchy visibility ..(as many rules as you define)
 ```
 Flags:
   -a, --all                 Show all commands
-  -b, --base string         OPA base path which will be evaluated (default "data.opactl")
-      --config string       config file (default is $HOME/.opactl.yaml)
+  -B, --base string         OPA base path which will be evaluated (default "data.opactl")
+  -b, --bundle strings      bundles
+      --config string       config file (default is <current directory>/.opactl)
   -d, --directory strings   directories
   -h, --help                help for opactl
   -i, --input               Accept stdin as input.stdin
