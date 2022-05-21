@@ -38,6 +38,15 @@ ls -l | opactl -i filter -p mod="-rwxr-xr-x"
 ]
 ```
 
+In another case, JSON can be read.
+
+```sh
+echo '{"orange": {"sweetness": "high"}, "cherry": {"sweetness":"middle"}}' | opactl -i json_filter
+[
+  "orange"
+]
+```
+
 ## Installation
 
 Build from source
@@ -73,7 +82,7 @@ Flags:
       --config string       config file (default is <current directory>/.opactl)
   -d, --directory strings   directories
   -h, --help                help for opactl
-  -i, --input               Accept stdin as input.stdin
+  -i, --input               Accept stdin as input.stdin. Multiple lines are stored as array. JSON will be parsed and stored in input.json_stdin as well.
   -p, --parameter strings   parameter (key=value)
   -q, --query string        Input your own query script (example: { rtn | rtn := 1 }
   -v, --verbose             Toggle verbose mode on/off (display print() output)

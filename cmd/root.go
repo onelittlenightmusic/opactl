@@ -39,34 +39,35 @@ var rootCmd = &cobra.Command{
 	Use:   "opactl",
 	Short: "opactl executes your own Rego (OPA) policy as CLI command.",
 	Long: `You define a rule in OPA policy, for example "rule1". 
-	Then, "opactl" detects your rule and turns it into subcommand such as "opactl rule1".`,
+Then, "opactl" detects your rule and turns it into subcommand such as "opactl rule1".`,
 
 	//Args: cobra.MinimumNArgs(1),
 	Args: func(cmd *cobra.Command, args []string) error {
     if (len(args) < 1) && !viper.GetBool("all") {
       return errors.New("requires at least one command or --all flag")
     }
+
 		return nil
 	},
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		initConfig()
 		// fmt.Println("args", args)
 		// fmt.Println("toComplete", toComplete)
-		strList := execAll(args)
+		strList := execAll(cmd, args, true)
 		if toComplete == "." {
 			strList = append(strList, ".", "..")
 		}
+		strList = append(strList, "help")
 		// fmt.Println("strList", strList)
 		return strList, cobra.ShellCompDirectiveNoFileComp
 	},
-	// ValidArgs: validArgs,
   Run: func(cmd *cobra.Command, args []string) {
 		// Prepare commands
 		commands := args[:]
 		allFlag := viper.GetBool("all")
 		var out, stderr bytes.Buffer
 
-		err := execOpa(commands, allFlag, viper.GetString("query"), &out, &stderr)
+		err := execOpa(cmd, commands, allFlag, false, viper.GetString("query"), &out, &stderr)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -96,21 +97,21 @@ func init() {
 	rootCmd.PersistentFlags().StringSliceP("bundle", "b", []string{}, "bundles")
 	viper.BindPFlag("bundle", rootCmd.PersistentFlags().Lookup("bundle"))
 
-	// rootCmd.PersistentFlags().StringSliceP("precommand", "P", []string{}, "precommand")
-	// viper.BindPFlag("precommand", rootCmd.PersistentFlags().Lookup("precommand"))
-
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Toggle verbose mode on/off (display print() output)")
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("all", "a", false, "Show all commands")
 	viper.BindPFlag("all", rootCmd.Flags().Lookup("all"))
-	rootCmd.Flags().BoolP("input", "i", false, "Accept stdin as input.stdin")
+	rootCmd.Flags().BoolP("input", "i", false, "Accept stdin as input.stdin. Multiple lines are stored as array. JSON will be parsed and stored in input.json_stdin as well.")
 	viper.BindPFlag("input", rootCmd.Flags().Lookup("input"))
+
 	rootCmd.Flags().StringP("query", "q", "", "Input your own query script (example: { rtn | rtn := 1 }")
 	viper.BindPFlag("query", rootCmd.Flags().Lookup("query"))
 	rootCmd.Flags().StringP("base", "B", "data.opactl", "OPA base path which will be evaluated")
 	viper.BindPFlag("base", rootCmd.Flags().Lookup("base"))
+
+
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -147,15 +148,59 @@ func parseParam(params []string, stdin bool) map[string]interface{} {
 		scanner := bufio.NewScanner(os.Stdin)
 		arrayString := []string{}
 		for scanner.Scan() {
-			// texts := strings.Split(scanner.Text(), " ")
 			arrayString = append(arrayString, scanner.Text())
 		}
 		rtn["stdin"] = arrayString
+
+		allString := strings.Join(arrayString, "")
+
+		var record interface{}
+		err := json.Unmarshal([]byte(allString), &record)
+		if err != nil  {
+			//log.Println("[ERROR] Failed JSON parsing.")
+			record = map[string]interface{}{ "error": "Failed JSON parsing."}
+		}
+
+		rtn["json_stdin"] = record
 	}
 	return rtn
 }
 
-func execOpa(commands []string, allFlag bool, query string, stdout, stderr *bytes.Buffer) error {
+
+func opaEval(policyPath string, q string, verbose bool, stdout, stderr *bytes.Buffer) error {
+		// Prepare directories
+		directories = viper.GetStringSlice("directory")
+		printVerbose(verbose, "directory setting is", viper.GetStringSlice("directory")...)
+		
+		opts := []string{"eval"}
+	
+		bundles := viper.GetStringSlice("bundle")
+		for _, b := range bundles {
+			opts = append(opts, "-b")
+			opts = append(opts, b)
+		}
+		for _, d := range directories {
+			opts = append(opts, "-d")
+			opts = append(opts, d)
+		}
+		opts = append(opts, "--import", policyPath, q, "--format=pretty", "-I")
+	
+		printVerbose(verbose, "opts:", opts...)
+		cmdExec := exec.Command("opa", opts...)
+		paramMap := parseParam(viper.GetStringSlice("parameter"), viper.GetBool("input"))
+		jsonStr, err := json.Marshal(paramMap)
+		cmdExec.Stdin = strings.NewReader(string(jsonStr))
+		if err != nil {
+			return err
+		}
+	
+		cmdExec.Stdout = stdout
+		cmdExec.Stderr = stderr
+		err = cmdExec.Run()
+		return err
+}
+
+func execOpa(cmd *cobra.Command, commands []string, allFlag bool, desc bool, query string, stdout, stderr *bytes.Buffer) error {
 	verbose := viper.GetBool("verbose")
 	c := commands
 
@@ -167,68 +212,75 @@ func execOpa(commands []string, allFlag bool, query string, stdout, stderr *byte
 	abstractPathArray := getAbstractPathArray(c)
 	policyPath := strings.Join(abstractPathArray, ".")
 	lastPath := abstractPathArray[len(abstractPathArray)-1]
+	if lastPath == "help" {
+		if len(commands) >= 1 && len(abstractPathArray) >= 3 {
+			cmd.Use = fmt.Sprintf(`opactl %s [rule]...`, strings.Join(commands[:len(commands)-1], " "))
+			var out bytes.Buffer
+
+			previousPath := abstractPathArray[len(abstractPathArray)-2]
+			basePath := abstractPathArray[:len(abstractPathArray)-2]
+			policyPath2 := strings.Join(basePath, ".")
+
+			queryTemplate := `{ desc |
+				field_comment_path := "__%s"
+				field_comment := object.get(%s, field_comment_path, "")
+				package_comment_path := ["%s", "__comment"]
+				package_comment := object.get(%s, package_comment_path, "")
+				desc := concat("", [field_comment, package_comment])
+			}[_]`
+
+			helpQuery := fmt.Sprintf(queryTemplate, previousPath, policyPath2, previousPath, policyPath2)
+			if err := opaEval(policyPath2, helpQuery, verbose, &out, stderr); err != nil {
+				return err
+			}
+		
+			cmd.Long = "Rule help: " + out.String()
+		}
+		cmd.Help()
+		return nil
+	}
 	q := query
 	if q == "" {
 		q = lastPath
 	}
 	if allFlag {
-		queryTemplate := `
-		{	desc |
-			%s[key]
-			not startswith(key, "__")
-			field_comment_path := concat("", ["__", key])
-			field_comment := object.get(%s, field_comment_path, "")
-			package_comment_path := [key, "__comment"]
-			package_comment := object.get(%s, package_comment_path, "")
-			desc := concat("", [key, "\t", field_comment, package_comment])
+		if desc {
+			queryTemplate := `
+			{	desc |
+				%s[key]
+				not startswith(key, "__")
+				field_comment_path := concat("", ["__", key])
+				field_comment := object.get(%s, field_comment_path, "")
+				package_comment_path := [key, "__comment"]
+				package_comment := object.get(%s, package_comment_path, "")
+				desc := concat("", [key, "\t", field_comment, package_comment])
+			}
+			`
+			q = fmt.Sprintf(queryTemplate, lastPath, lastPath, lastPath)
+		} else {
+			queryTemplate := `
+			{	key |
+				%s[key]
+				not startswith(key, "__")
+			}
+			`
+			q = fmt.Sprintf(queryTemplate, lastPath)
+
 		}
-		`
-		q = fmt.Sprintf(queryTemplate, lastPath, lastPath, lastPath)
 	}
 
-	// Prepare directories
-	directories = viper.GetStringSlice("directory")
-	printVerbose(verbose, "directory setting is", viper.GetStringSlice("directory")...)
-	
-	opts := []string{"eval"}
-
-	bundles := viper.GetStringSlice("bundle")
-	for _, b := range bundles {
-		opts = append(opts, "-b")
-		opts = append(opts, b)
-	}
-	for _, d := range directories {
-		opts = append(opts, "-d")
-		opts = append(opts, d)
-	}
-	opts = append(opts, "--import", policyPath, q, "--format=pretty", "-I")
-
-	printVerbose(verbose, "opts:", opts...)
-	cmdExec := exec.Command("opa", opts...)
-	paramMap := parseParam(viper.GetStringSlice("parameter"), viper.GetBool("input"))
-	jsonStr, err := json.Marshal(paramMap)
-	cmdExec.Stdin = strings.NewReader(string(jsonStr))
-	if err != nil {
-		return err
-	}
-
-	cmdExec.Stdout = stdout
-	cmdExec.Stderr = stderr
-	err = cmdExec.Run()
-
-	return err
+	return opaEval(policyPath, q, verbose, stdout, stderr)
 }
 
-func execAll(commands []string) []string {
+func execAll(cmd *cobra.Command, commands []string, desc bool) []string {
 	var out, stderr bytes.Buffer
 
-	err := execOpa(commands, true, "", &out, &stderr)
+	err := execOpa(cmd, commands, true, desc, "", &out, &stderr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	var str []string
-	// fmt.Println("out:", out.String())
 	err = json.Unmarshal(out.Bytes(), &str)
 
 	if err != nil {
