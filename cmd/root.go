@@ -53,8 +53,8 @@ Then, "opactl" detects your rule and turns it into subcommand such as "opactl ru
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		initConfig()
 
-		_, policyPath, lastPath := Parse(args)
-		strList, _ := GetAllRules(policyPath, lastPath, true, cmd.OutOrStderr())
+		_, policyPath, _ := Parse(args)
+		strList, _ := GetAllRules2(policyPath, cmd.OutOrStderr())
 		if toComplete == "." {
 			strList = append(strList, ".", "..")
 		}
@@ -97,7 +97,7 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("all", "a", false, "Show all commands")
 	viper.BindPFlag("all", rootCmd.Flags().Lookup("all"))
-	rootCmd.Flags().BoolP("input", "i", false, "Accept stdin as input.stdin. Multiple lines are stored as array. JSON will be parsed and stored in input.json_stdin as well.")
+	rootCmd.Flags().BoolP("input", "i", false, "Accept stdin as input.stdin. \nMultiple lines are stored as array. \nJSON will be parsed and stored in input.json_stdin as well.")
 	viper.BindPFlag("input", rootCmd.Flags().Lookup("input"))
 
 	rootCmd.Flags().StringP("query", "q", "", "Input your own query script (example: { rtn | rtn := 1 }")
@@ -202,43 +202,39 @@ func execOpa(cmd *cobra.Command, commands []string, allFlag bool, desc bool, que
 	help := (lastPath == "help")
 
 	if help {
-		needSubrule := false
+		subrules := []string{}
 		if len(commands) >= 1 && len(abstractPathArray) >= 3 {
-			lastPath = abstractPathArray[len(abstractPathArray)-2]
-			basePath := abstractPathArray[:len(abstractPathArray)-2]
-			policyPath2 := strings.Join(basePath, ".")
-			policyPath = strings.Join(abstractPathArray[:len(abstractPathArray)-1], ".")
+			lastRule := abstractPathArray[len(abstractPathArray)-2]
+			parentRulePath := strings.Join(abstractPathArray[:len(abstractPathArray)-2], ".")
+			lastRulePath := strings.Join(abstractPathArray[:len(abstractPathArray)-1], ".")
 
-			_Type, err := GetType(policyPath, lastPath, stderr)
+			help, err2 := GetComment2(parentRulePath, lastRule, stderr)
+			if err2 != nil {
+				return err2
+			}
+			cmd.Long = fmt.Sprintf("%s: %s", lastRule, help)
+
+			_Type, err := GetType2(lastRulePath, stderr)
 			if err != nil {
 				return err
 			}
 			
 			if _Type == "object" {
-				needSubrule = true
 				cmd.Use = fmt.Sprintf(`opactl %s [subrule]...`, strings.Join(commands[:len(commands)-1], " "))
+				subrules, _ = GetAllRules2(lastRulePath, stderr)
 			}
-
-			help, err2 := GetComment(policyPath2, lastPath, stderr)
-			if err2 != nil {
-				return err2
-			}
-			cmd.Long = fmt.Sprintf("%s: %s", lastPath, help)
 		}
 
 		subCompletionCmd, _, _ := cmd.Find([]string{"completion"})
 		cmd.RemoveCommand(subCompletionCmd)
 		cmd.Help()
 
-		if !needSubrule {
-			return nil
-		}
-		fmt.Fprintf(out, `
-Subrules:
-`)
-		subcommands, _ := GetAllRules(policyPath, lastPath, true, stderr)
-		for _, v := range subcommands {
-			fmt.Fprintf(out, "  %s\n", v)
+		if len(subrules) > 0 {
+			// Display Subrules at the last of help
+			fmt.Fprintln(out, "Subrules:")
+			for _, v := range subrules {
+				fmt.Fprintf(out, "  %s\n", v)
+			}			
 		}
 		return nil
 	}
@@ -268,29 +264,81 @@ func Parse(commands []string) ([]string, string, string) {
 	return abstractPathArray, policyPath, lastPath
 }
 
-func GetAllRules(policyPath, lastPath string, desc bool, stderr io.Writer) ([]string, error) {
-	var outString []string
-	err := GetObject(policyPath, getAllQuery(lastPath, desc), stderr, &outString)
+func GetAllRules2(policyPath string, stderr io.Writer) ([]string, error) {
+	var obj map[string]interface{}
+	err := GetObject(policyPath, policyPath, stderr, &obj)
+
+	allRules := []string{}
+	for k, v := range obj {
+		if strings.HasPrefix(k, "__") {
+			continue
+		}
+		if val, ok := obj["__"+k]; ok {
+			allRules = append(allRules, fmt.Sprintf("%s\t%s", k, val))
+			continue
+		}
+		if vobj, ok := v.(map[string]interface{}); ok {
+			if val, ok := vobj["__comment"]; ok {
+				allRules = append(allRules, fmt.Sprintf("%s\t%s", k, val))			
+				continue
+			}
+		}
+		allRules = append(allRules, k)
+	}
+	return allRules, err
+}
+
+func GetType2(policyPath string, stderr io.Writer) (string, error) {
+	var outString string
+	err := GetObject(policyPath, getTypeQuery(policyPath), stderr, &outString)
 	return outString, err
 }
 
-func GetType(policyPath string, lastPath string, stderr io.Writer) (string, error) {
-	var outString string
-	err := GetObject(policyPath, getTypeQuery(lastPath), stderr, &outString)
-	return outString, err
+func GetComment2(policyPath, lastPath string, stderr io.Writer) (string, error) {
+	var obj map[string]interface{}
+	err := GetObject(policyPath, policyPath, stderr, &obj)
+
+	var commentObj interface{}
+	k := lastPath
+	if val, ok := obj["__"+k]; ok {
+		commentObj = val
+	} else
+	if v, ok := obj[k]; ok {
+		if vobj, ok := v.(map[string]interface{}); ok {
+			if val, ok := vobj["__comment"]; ok {
+				commentObj = val
+			}
+		}
+	}
+	if commentStr, ok := commentObj.(string); ok {
+		return commentStr, err
+	}
+	return "", err
 }
 
-func GetComment(policyPath, lastPath string, stderr io.Writer) (string, error) {
-	var outString string
-	err := GetObject(policyPath, getCommentQuery(policyPath, lastPath), stderr, &outString)
-	return outString, err
-}
+// func GetAllRules(policyPath, lastPath string, desc bool, stderr io.Writer) ([]string, error) {
+// 	var outString []string
+// 	err := GetObject(policyPath, getAllQuery(lastPath, desc), stderr, &outString)
+// 	return outString, err
+// }
+
+// func GetType(policyPath string, lastPath string, stderr io.Writer) (string, error) {
+// 	var outString string
+// 	err := GetObject(policyPath, getTypeQuery(lastPath), stderr, &outString)
+// 	return outString, err
+// }
+
+// func GetComment(policyPath, lastPath string, stderr io.Writer) (string, error) {
+// 	var outString string
+// 	err := GetObject(policyPath, getCommentQuery(policyPath, lastPath), stderr, &outString)
+// 	return outString, err
+// }
 
 func GetObject(policyPath string, query string, stderr io.Writer, outString interface{}) (error) {
 	var err error = nil
 	outBytes := bytes.Buffer{}
 
-	if err = opaEval(policyPath, query, false, &outBytes, stderr); err != nil {
+	if err = opaEval(policyPath, query, viper.GetBool("verbose"), &outBytes, stderr); err != nil {
 		return err
 	}
 

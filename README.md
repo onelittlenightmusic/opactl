@@ -38,7 +38,7 @@ ls -l | opactl -i filter -p mod="-rwxr-xr-x"
 ]
 ```
 
-In another case, JSON can be read.
+In another case, JSON can be read. ([examples/filter.rego](examples/filter.rego))
 
 ```sh
 echo '{"orange": {"sweetness": "high"}, "cherry": {"sweetness":"middle"}}' | opactl -i json_filter
@@ -74,9 +74,9 @@ opactl <tab>
 hierarchy visibility ..(as many rules as you define)
 ```
 
-## Try quickly
+## Give it a try!
 
-After installation, you can learn how to use `opactl` with examples in the repository 
+After the installation, you can learn how to use `opactl` with examples in the repository (example rules are located [here](examples)).
 
 ```sh
 opactl examples help
@@ -92,7 +92,9 @@ Flags:
       --config string       config file (default is <current directory>/.opactl)
   -d, --directory strings   directories
   -h, --help                help for opactl
-  -i, --input               Accept stdin as input.stdin. Multiple lines are stored as array. JSON will be parsed and stored in input.json_stdin as well.
+  -i, --input               Accept stdin as input.stdin. 
+                            Multiple lines are stored as array. 
+                            JSON will be parsed and stored in input.json_stdin as well.
   -p, --parameter strings   parameter (key=value)
   -q, --query string        Input your own query script (example: { rtn | rtn := 1 }
   -v, --verbose             Toggle verbose mode on/off (display print() output)

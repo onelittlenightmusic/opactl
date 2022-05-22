@@ -18,7 +18,7 @@ set[rtn] {
   rtn := input.stdin[_]
 }
 
-__array = "array (Kind of list. Elements are not necessary unique. The order is preserved.)(Requires stdin)"
+__array = "array (Kind of list. Elements are not necessary unique. The order is preserved.)\n(Requires stdin)"
 array = [rtn|
   rtn := input.stdin[_]
 ]
