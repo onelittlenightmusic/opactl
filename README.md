@@ -244,6 +244,6 @@ song = __config.songs[song_id]
 
 Example) Outputs of completion
 
-![](img/2022-05-16-23-19-18.png)
+![](img/2022-05-22-14-00-33.png)
 
-![](img/2022-05-16-23-18-59.png)
+![](img/2022-05-22-13-59-59.png)
