@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -36,7 +37,7 @@ var directories []string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "opactl",
+	Use:   "opactl [rule]... [flags] (ex. opactl rule1 subrule11 ...)",
 	Short: "opactl executes your own Rego (OPA) policy as CLI command.",
 	Long: `You define a rule in OPA policy, for example "rule1". 
 Then, "opactl" detects your rule and turns it into subcommand such as "opactl rule1".`,
@@ -44,39 +45,32 @@ Then, "opactl" detects your rule and turns it into subcommand such as "opactl ru
 	//Args: cobra.MinimumNArgs(1),
 	Args: func(cmd *cobra.Command, args []string) error {
     if (len(args) < 1) && !viper.GetBool("all") {
-      return errors.New("requires at least one command or --all flag")
+      return errors.New("requires at least one rule (=command) or --all flag")
     }
 
 		return nil
 	},
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		initConfig()
-		// fmt.Println("args", args)
-		// fmt.Println("toComplete", toComplete)
-		strList := execAll(cmd, args, true)
+
+		_, policyPath, lastPath := Parse(args)
+		strList, _ := GetAllRules(policyPath, lastPath, true, cmd.OutOrStderr())
 		if toComplete == "." {
 			strList = append(strList, ".", "..")
 		}
-		strList = append(strList, "help")
-		// fmt.Println("strList", strList)
+		strList = append(strList, "help\tDisplay help contents (description of rule)")
+
 		return strList, cobra.ShellCompDirectiveNoFileComp
 	},
   Run: func(cmd *cobra.Command, args []string) {
 		// Prepare commands
 		commands := args[:]
 		allFlag := viper.GetBool("all")
-		var out, stderr bytes.Buffer
 
-		err := execOpa(cmd, commands, allFlag, false, viper.GetString("query"), &out, &stderr)
+		err := execOpa(cmd, commands, allFlag, false, viper.GetString("query"))
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		if viper.GetBool("verbose") {
-			fmt.Println(stderr.String())
-		}
-
-		fmt.Println(out.String())
   },
 }
 
@@ -110,8 +104,6 @@ func init() {
 	viper.BindPFlag("query", rootCmd.Flags().Lookup("query"))
 	rootCmd.Flags().StringP("base", "B", "data.opactl", "OPA base path which will be evaluated")
 	viper.BindPFlag("base", rootCmd.Flags().Lookup("base"))
-
-
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -157,7 +149,6 @@ func parseParam(params []string, stdin bool) map[string]interface{} {
 		var record interface{}
 		err := json.Unmarshal([]byte(allString), &record)
 		if err != nil  {
-			//log.Println("[ERROR] Failed JSON parsing.")
 			record = map[string]interface{}{ "error": "Failed JSON parsing."}
 		}
 
@@ -167,7 +158,7 @@ func parseParam(params []string, stdin bool) map[string]interface{} {
 }
 
 
-func opaEval(policyPath string, q string, verbose bool, stdout, stderr *bytes.Buffer) error {
+func opaEval(policyPath string, q string, verbose bool, stdout, stderr io.Writer) error {
 		// Prepare directories
 		directories = viper.GetStringSlice("directory")
 		printVerbose(verbose, "directory setting is", viper.GetStringSlice("directory")...)
@@ -200,8 +191,70 @@ func opaEval(policyPath string, q string, verbose bool, stdout, stderr *bytes.Bu
 		return err
 }
 
-func execOpa(cmd *cobra.Command, commands []string, allFlag bool, desc bool, query string, stdout, stderr *bytes.Buffer) error {
+func execOpa(cmd *cobra.Command, commands []string, allFlag bool, desc bool, query string) error {
+	out := cmd.OutOrStdout()
+	stderr := cmd.OutOrStderr()
+
 	verbose := viper.GetBool("verbose")
+
+	abstractPathArray, policyPath, lastPath := Parse(commands)
+
+	help := (lastPath == "help")
+
+	if help {
+		needSubrule := false
+		if len(commands) >= 1 && len(abstractPathArray) >= 3 {
+			lastPath = abstractPathArray[len(abstractPathArray)-2]
+			basePath := abstractPathArray[:len(abstractPathArray)-2]
+			policyPath2 := strings.Join(basePath, ".")
+			policyPath = strings.Join(abstractPathArray[:len(abstractPathArray)-1], ".")
+
+			_Type, err := GetType(policyPath, lastPath, stderr)
+			if err != nil {
+				return err
+			}
+			
+			if _Type == "object" {
+				needSubrule = true
+				cmd.Use = fmt.Sprintf(`opactl %s [subrule]...`, strings.Join(commands[:len(commands)-1], " "))
+			}
+
+			help, err2 := GetComment(policyPath2, lastPath, stderr)
+			if err2 != nil {
+				return err2
+			}
+			cmd.Long = fmt.Sprintf("%s: %s", lastPath, help)
+		}
+
+		subCompletionCmd, _, _ := cmd.Find([]string{"completion"})
+		cmd.RemoveCommand(subCompletionCmd)
+		cmd.Help()
+
+		if !needSubrule {
+			return nil
+		}
+		fmt.Fprintf(out, `
+Subrules:
+`)
+		subcommands, _ := GetAllRules(policyPath, lastPath, true, stderr)
+		for _, v := range subcommands {
+			fmt.Fprintf(out, "  %s\n", v)
+		}
+		return nil
+	}
+
+	q := query
+	if q == "" {
+		q = lastPath
+	}
+	if allFlag {
+		q = getAllQuery(lastPath, desc)
+	}
+
+	return opaEval(policyPath, q, verbose, out, stderr)
+}
+
+func Parse(commands []string) ([]string, string, string) {
 	c := commands
 
 	// Prepare paths and query
@@ -212,81 +265,83 @@ func execOpa(cmd *cobra.Command, commands []string, allFlag bool, desc bool, que
 	abstractPathArray := getAbstractPathArray(c)
 	policyPath := strings.Join(abstractPathArray, ".")
 	lastPath := abstractPathArray[len(abstractPathArray)-1]
-	if lastPath == "help" {
-		if len(commands) >= 1 && len(abstractPathArray) >= 3 {
-			cmd.Use = fmt.Sprintf(`opactl %s [rule]...`, strings.Join(commands[:len(commands)-1], " "))
-			var out bytes.Buffer
-
-			previousPath := abstractPathArray[len(abstractPathArray)-2]
-			basePath := abstractPathArray[:len(abstractPathArray)-2]
-			policyPath2 := strings.Join(basePath, ".")
-
-			queryTemplate := `{ desc |
-				field_comment_path := "__%s"
-				field_comment := object.get(%s, field_comment_path, "")
-				package_comment_path := ["%s", "__comment"]
-				package_comment := object.get(%s, package_comment_path, "")
-				desc := concat("", [field_comment, package_comment])
-			}[_]`
-
-			helpQuery := fmt.Sprintf(queryTemplate, previousPath, policyPath2, previousPath, policyPath2)
-			if err := opaEval(policyPath2, helpQuery, verbose, &out, stderr); err != nil {
-				return err
-			}
-		
-			cmd.Long = "Rule help: " + out.String()
-		}
-		cmd.Help()
-		return nil
-	}
-	q := query
-	if q == "" {
-		q = lastPath
-	}
-	if allFlag {
-		if desc {
-			queryTemplate := `
-			{	desc |
-				%s[key]
-				not startswith(key, "__")
-				field_comment_path := concat("", ["__", key])
-				field_comment := object.get(%s, field_comment_path, "")
-				package_comment_path := [key, "__comment"]
-				package_comment := object.get(%s, package_comment_path, "")
-				desc := concat("", [key, "\t", field_comment, package_comment])
-			}
-			`
-			q = fmt.Sprintf(queryTemplate, lastPath, lastPath, lastPath)
-		} else {
-			queryTemplate := `
-			{	key |
-				%s[key]
-				not startswith(key, "__")
-			}
-			`
-			q = fmt.Sprintf(queryTemplate, lastPath)
-
-		}
-	}
-
-	return opaEval(policyPath, q, verbose, stdout, stderr)
+	return abstractPathArray, policyPath, lastPath
 }
 
-func execAll(cmd *cobra.Command, commands []string, desc bool) []string {
-	var out, stderr bytes.Buffer
+func GetAllRules(policyPath, lastPath string, desc bool, stderr io.Writer) ([]string, error) {
+	var outString []string
+	err := GetObject(policyPath, getAllQuery(lastPath, desc), stderr, &outString)
+	return outString, err
+}
 
-	err := execOpa(cmd, commands, true, desc, "", &out, &stderr)
-	if err != nil {
-		log.Fatal(err)
+func GetType(policyPath string, lastPath string, stderr io.Writer) (string, error) {
+	var outString string
+	err := GetObject(policyPath, getTypeQuery(lastPath), stderr, &outString)
+	return outString, err
+}
+
+func GetComment(policyPath, lastPath string, stderr io.Writer) (string, error) {
+	var outString string
+	err := GetObject(policyPath, getCommentQuery(policyPath, lastPath), stderr, &outString)
+	return outString, err
+}
+
+func GetObject(policyPath string, query string, stderr io.Writer, outString interface{}) (error) {
+	var err error = nil
+	outBytes := bytes.Buffer{}
+
+	if err = opaEval(policyPath, query, false, &outBytes, stderr); err != nil {
+		return err
 	}
 
-	var str []string
-	err = json.Unmarshal(out.Bytes(), &str)
+	_ = json.Unmarshal(outBytes.Bytes(), outString)
+	return nil
+}
 
-	if err != nil {
-		log.Fatal(err)
+func getAllQuery(lastPath string, desc bool) string {
+	var q string
+	if desc {
+		queryTemplate := `
+		{	desc |
+			%s[key]
+			not startswith(key, "__")
+			field_comment_path := concat("", ["__", key])
+			field_comment := object.get(%s, field_comment_path, "")
+			package_comment_path := [key, "__comment"]
+			package_comment := object.get(%s, package_comment_path, "")
+			desc := concat("", [key, "\t", field_comment, package_comment])
+		}
+		`
+		q = fmt.Sprintf(queryTemplate, lastPath, lastPath, lastPath)
+	} else {
+		queryTemplate := `
+		{	key |
+			%s[key]
+			not startswith(key, "__")
+		}
+		`
+		q = fmt.Sprintf(queryTemplate, lastPath)
+
 	}
-	return str
+	return q
+}
+
+func getTypeQuery(lastPath string) string {
+	return fmt.Sprintf(`
+		type_name(%s)
+	`, lastPath)
+}
+
+func getCommentQuery(policyPath, lastPath string) string {
+	queryTemplate := `{ desc |
+		field_comment_path := "__%s"
+		field_comment := object.get(%s, field_comment_path, "")
+		package_comment_path := ["%s", "__comment"]
+		package_comment := object.get(%s, package_comment_path, "")
+		desc := concat("", [field_comment, package_comment])
+	}[_]`
+
+	return fmt.Sprintf(queryTemplate, lastPath, policyPath, lastPath, policyPath)
 }
 
 func printVerbose(verbose bool, label string, log ...string) {

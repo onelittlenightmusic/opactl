@@ -1,6 +1,8 @@
-package opactl.hierarchy.label
+package opactl.examples.hierarchy.label
 
 import data.sample_data
+
+__comment = "Deeper examples for processing labels"
 
 index = { k: summary |
   pods := sample_data.pods

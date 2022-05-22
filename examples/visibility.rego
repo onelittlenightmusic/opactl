@@ -1,4 +1,4 @@
-package opactl.visibility
+package opactl.examples.visibility
 
 # A comment for subcommand "visibility" 
 __comment = "Example of how to use invisible field __ and comments"

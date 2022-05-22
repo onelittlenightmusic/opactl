@@ -1,4 +1,6 @@
-package opactl
+package opactl.examples.filter
+
+__comment = "Examples of rules filtering stdin"
 
 __filter = "Filter ls output with mode label (parameter mod=\"-rwxr-xr-x\")"
 
@@ -8,12 +10,12 @@ filter = { line |
   texts[0] == input.mod
 }
 
-__filter = "Filter ls output with mode label (parameter mod=\"-rwxr-xr-x\")"
+__json_filter = "Filter json output  (parameter sweetness=\"high\")"
 
 json_filter = { fruit_name |
   not json_error_found
   fruit_spec := input.json_stdin[fruit_name]
-  fruit_spec.sweetness == "high"
+  fruit_spec.sweetness == input.sweetness
 }
 
 json_error_found {

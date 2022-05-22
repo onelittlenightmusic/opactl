@@ -52,6 +52,8 @@ echo '{"orange": {"sweetness": "high"}, "cherry": {"sweetness":"middle"}}' | opa
 Build from source
 
 ```sh
+git clone https://github.com/onelittlenightmusic/opactl
+cd opactl
 go build
 sudo cp opactl /usr/local/bin/
 ```
@@ -70,6 +72,14 @@ opactl completion zsh > /usr/local/share/zsh/site-functions/_opactl
 ```sh
 opactl <tab>
 hierarchy visibility ..(as many rules as you define)
+```
+
+## Try quickly
+
+After installation, you can learn how to use `opactl` with examples in the repository 
+
+```sh
+opactl examples help
 ```
 
 ## Options
