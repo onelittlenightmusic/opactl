@@ -1,0 +1,4 @@
+directory:
+- ./policy.rego
+raw-output: true
+stdin: true

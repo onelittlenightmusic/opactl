@@ -47,6 +47,8 @@ echo '{"orange": {"sweetness": "high"}, "cherry": {"sweetness":"middle"}}' | opa
 ]
 ```
 
+Last, `opactl` is good for use with other commands ([Script examples](examplescripts))
+
 ## Installation
 
 Build from source
@@ -86,18 +88,21 @@ opactl examples help
 
 ```
 Flags:
-  -a, --all                 Show all commands
-  -B, --base string         OPA base path which will be evaluated (default "data.opactl")
-  -b, --bundle strings      bundles
-      --config string       config file (default is <current directory>/.opactl)
-  -d, --directory strings   directories
-  -h, --help                help for opactl
-  -i, --input               Accept stdin as input.stdin. 
-                            Multiple lines are stored as array. 
-                            JSON will be parsed and stored in input.json_stdin as well.
-  -p, --parameter strings   parameter (key=value)
-  -q, --query string        Input your own query script (example: { rtn | rtn := 1 }
-  -v, --verbose             Toggle verbose mode on/off (display print() output)
+  -a, --all                           Show all commands
+  -B, --base string                   OPA base path which will be evaluated (default "data.opactl")
+  -b, --bundle strings                bundles
+      --config string                 config file (default is <current directory>/.opactl)
+  -d, --directory strings             directories
+  -h, --help                          help for opactl
+  -p, --parameter strings             Parameter (-p key=value[,key2=value2] [-p others])
+  -P, --parameter-array stringArray   Array parameter (key=value1,value2 [key=value3])
+  -q, --query string                  Input your own query script (example: { rtn | rtn := 1 })
+  -r, --raw-output                    If the result of rule is a string,
+                                      it will be written directly to stdout without quotes
+  -i, --stdin                         Accept stdin as input.stdin. 
+                                      Multiple lines are stored as array.
+                                      JSON will be parsed and stored in input.json_stdin as well.
+  -v, --verbose                       Toggle verbose mode on/off (display print() output)
 ```
 
 Usage example)

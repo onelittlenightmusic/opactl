@@ -37,7 +37,7 @@ var directories []string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "opactl [rule]... [flags] (ex. opactl rule1 subrule11 ...)",
+	Use:   "opactl [rule...|-a] [flags] (ex. opactl rule1 subrule11 -d ./)",
 	Short: "opactl executes your own Rego (OPA) policy as CLI command.",
 	Long: `You define a rule in OPA policy, for example "rule1". 
 Then, "opactl" detects your rule and turns it into subcommand such as "opactl rule1".`,
@@ -45,7 +45,8 @@ Then, "opactl" detects your rule and turns it into subcommand such as "opactl ru
 	//Args: cobra.MinimumNArgs(1),
 	Args: func(cmd *cobra.Command, args []string) error {
     if (len(args) < 1) && !viper.GetBool("all") {
-      return errors.New("requires at least one rule (=command) or --all flag")
+      return errors.New(`Requires at least one rule or --all flag
+	Example) opactl [rule]`)
     }
 
 		return nil
@@ -62,15 +63,13 @@ Then, "opactl" detects your rule and turns it into subcommand such as "opactl ru
 
 		return strList, cobra.ShellCompDirectiveNoFileComp
 	},
-  Run: func(cmd *cobra.Command, args []string) {
+  RunE: func(cmd *cobra.Command, args []string) error {
 		// Prepare commands
 		commands := args[:]
 		allFlag := viper.GetBool("all")
 
 		err := execOpa(cmd, commands, allFlag, false, viper.GetString("query"))
-		if err != nil {
-			log.Fatal(err)
-		}
+		return err
   },
 }
 
@@ -84,8 +83,10 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is <current directory>/.opactl)")
-	rootCmd.PersistentFlags().StringSliceP("parameter", "p", []string{}, "parameter (key=value)")
+	rootCmd.PersistentFlags().StringSliceP("parameter", "p", []string{}, "Parameter (-p key=value[,key2=value2] [-p others])")
 	viper.BindPFlag("parameter", rootCmd.PersistentFlags().Lookup("parameter"))
+	rootCmd.PersistentFlags().StringArrayP("parameter-array", "P", []string{}, "Array parameter (key=value1,value2 [key=value3])")
+	viper.BindPFlag("parameter-array", rootCmd.PersistentFlags().Lookup("parameter-array"))
 	rootCmd.PersistentFlags().StringSliceP("directory", "d", []string{}, "directories")
 	viper.BindPFlag("directory", rootCmd.PersistentFlags().Lookup("directory"))
 	rootCmd.PersistentFlags().StringSliceP("bundle", "b", []string{}, "bundles")
@@ -97,13 +98,18 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("all", "a", false, "Show all commands")
 	viper.BindPFlag("all", rootCmd.Flags().Lookup("all"))
-	rootCmd.Flags().BoolP("input", "i", false, "Accept stdin as input.stdin. \nMultiple lines are stored as array. \nJSON will be parsed and stored in input.json_stdin as well.")
-	viper.BindPFlag("input", rootCmd.Flags().Lookup("input"))
+	rootCmd.Flags().BoolP("stdin", "i", false, `Accept stdin as input.stdin. 
+Multiple lines are stored as array.
+JSON will be parsed and stored in input.json_stdin as well.`)
+	viper.BindPFlag("stdin", rootCmd.Flags().Lookup("stdin"))
 
-	rootCmd.Flags().StringP("query", "q", "", "Input your own query script (example: { rtn | rtn := 1 }")
+	rootCmd.Flags().StringP("query", "q", "", "Input your own query script (example: { rtn | rtn := 1 })")
 	viper.BindPFlag("query", rootCmd.Flags().Lookup("query"))
 	rootCmd.Flags().StringP("base", "B", "data.opactl", "OPA base path which will be evaluated")
 	viper.BindPFlag("base", rootCmd.Flags().Lookup("base"))
+	rootCmd.Flags().BoolP("raw-output", "r", false, `If the result of rule is a string,
+it will be written directly to stdout without quotes`)
+	viper.BindPFlag("raw-output", rootCmd.Flags().Lookup("raw-output"))
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -127,7 +133,7 @@ func initConfig() {
 	}
 }
 
-func parseParam(params []string, stdin bool) map[string]interface{} {
+func parseParam(params []string, arrayParams []string, stdin bool) map[string]interface{} {
 	rtn := map[string]interface{}{}
 	for _, param := range params {
 		kv := strings.Split(param, "=")
@@ -135,6 +141,20 @@ func parseParam(params []string, stdin bool) map[string]interface{} {
 			continue
 		}
 		rtn[kv[0]] = kv[1]
+	}
+	for _, arrayParam := range arrayParams {
+		kv := strings.Split(arrayParam, "=")
+		if len(kv) <= 1 {
+			continue
+		}
+		vals := strings.Split(kv[1], ",")
+		if v, ok := rtn[kv[0]]; ok {
+			if arr, ok := v.([]string); ok {
+				rtn[kv[0]] = append(arr, vals...)
+				continue
+			}
+		}
+		rtn[kv[0]] = vals
 	}
 	if stdin {
 		scanner := bufio.NewScanner(os.Stdin)
@@ -166,6 +186,11 @@ func opaEval(policyPath string, q string, verbose bool, stdout, stderr io.Writer
 		opts := []string{"eval"}
 	
 		bundles := viper.GetStringSlice("bundle")
+
+		if len(bundles) == 0 && len(directories) == 0 {
+			return errors.New(`Requires at least one policy file (-d) or bundle (-b)
+	Example) opactl rule1 -d ./policy.rego, opactl rule1 -b bundle.tar.gz`)
+		}
 		for _, b := range bundles {
 			opts = append(opts, "-b")
 			opts = append(opts, b)
@@ -174,11 +199,17 @@ func opaEval(policyPath string, q string, verbose bool, stdout, stderr io.Writer
 			opts = append(opts, "-d")
 			opts = append(opts, d)
 		}
-		opts = append(opts, "--import", policyPath, q, "--format=pretty", "-I")
+
+		format := "--format=pretty"
+		if viper.GetBool("raw-output") {
+			format = "--format=raw"
+		}
+
+		opts = append(opts, "--import", policyPath, q, format, "-I")
 	
 		printVerbose(verbose, "opts:", opts...)
 		cmdExec := exec.Command("opa", opts...)
-		paramMap := parseParam(viper.GetStringSlice("parameter"), viper.GetBool("input"))
+		paramMap := parseParam(viper.GetStringSlice("parameter"), viper.GetStringSlice("parameter-array"), viper.GetBool("stdin"))
 		jsonStr, err := json.Marshal(paramMap)
 		cmdExec.Stdin = strings.NewReader(string(jsonStr))
 		if err != nil {
@@ -208,6 +239,8 @@ func execOpa(cmd *cobra.Command, commands []string, allFlag bool, desc bool, que
 			parentRulePath := strings.Join(abstractPathArray[:len(abstractPathArray)-2], ".")
 			lastRulePath := strings.Join(abstractPathArray[:len(abstractPathArray)-1], ".")
 
+			fmt.Fprintf(out, "Commands: %s\n(rule location: %s)\n", commands, lastRulePath)
+
 			help, err2 := GetComment2(parentRulePath, lastRule, stderr)
 			if err2 != nil {
 				return err2
@@ -223,6 +256,8 @@ func execOpa(cmd *cobra.Command, commands []string, allFlag bool, desc bool, que
 				cmd.Use = fmt.Sprintf(`opactl %s [subrule]...`, strings.Join(commands[:len(commands)-1], " "))
 				subrules, _ = GetAllRules2(lastRulePath, stderr)
 			}
+
+
 		}
 
 		subCompletionCmd, _, _ := cmd.Find([]string{"completion"})
