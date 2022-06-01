@@ -32,7 +32,7 @@ you can run a subcommand `opactl filter` like this.
 
 ```sh
 # Run subcommand filter with using stdin (-i) and parameter (mod=...)
-ls -l | opactl -i filter -p mod="-rwxr-xr-x"
+ls -l | opactl -i examples filter -p mod="-rwxr-xr-x"
 [
   "-rwxr-xr-x  1 hiroyukosaki  staff  8055840 May 12 01:04 opactl"
 ]
@@ -41,7 +41,7 @@ ls -l | opactl -i filter -p mod="-rwxr-xr-x"
 In another case, JSON can be read. ([examples/filter.rego](examples/filter.rego))
 
 ```sh
-echo '{"orange": {"sweetness": "high"}, "cherry": {"sweetness":"middle"}}' | opactl -i json_filter
+echo '{"orange": {"sweetness": "high"}, "cherry": {"sweetness":"middle"}}' | opactl -i examples filter json_filter -p sweetness=high
 [
   "orange"
 ]

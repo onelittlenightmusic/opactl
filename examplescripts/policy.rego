@@ -24,6 +24,8 @@ search_spaced = concat(" ", search)
 
 # METADATA
 # description: has_keywords_in_line rule
+__grep = "Search lines which include all keywords"
+default grep = false
 grep {
   line := input.stdin[_]
   not keywords_missing

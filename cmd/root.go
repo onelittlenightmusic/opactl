@@ -100,7 +100,7 @@ func init() {
 	viper.BindPFlag("all", rootCmd.Flags().Lookup("all"))
 	rootCmd.Flags().BoolP("stdin", "i", false, `Accept stdin as input.stdin. 
 Multiple lines are stored as array.
-JSON will be parsed and stored in input.json_stdin as well.`)
+JSON will be parsed and stored in input.stdin as well.`)
 	viper.BindPFlag("stdin", rootCmd.Flags().Lookup("stdin"))
 
 	rootCmd.Flags().StringP("query", "q", "", "Input your own query script (example: { rtn | rtn := 1 })")
@@ -135,6 +135,25 @@ func initConfig() {
 
 func parseParam(params []string, arrayParams []string, stdin bool) map[string]interface{} {
 	rtn := map[string]interface{}{}
+
+	if stdin {
+		scanner := bufio.NewScanner(os.Stdin)
+		arrayString := []string{}
+		for scanner.Scan() {
+			arrayString = append(arrayString, scanner.Text())
+		}
+		rtn["stdin"] = arrayString
+
+		allString := strings.Join(arrayString, "")
+
+		var record interface{}
+		err := json.Unmarshal([]byte(allString), &record)
+		if err != nil  {
+			record = map[string]interface{}{ "error": "Failed JSON parsing."}
+		}
+
+		rtn["json_stdin"] = record
+	}
 	for _, param := range params {
 		kv := strings.Split(param, "=")
 		if len(kv) <= 1 {
@@ -155,24 +174,6 @@ func parseParam(params []string, arrayParams []string, stdin bool) map[string]in
 			}
 		}
 		rtn[kv[0]] = vals
-	}
-	if stdin {
-		scanner := bufio.NewScanner(os.Stdin)
-		arrayString := []string{}
-		for scanner.Scan() {
-			arrayString = append(arrayString, scanner.Text())
-		}
-		rtn["stdin"] = arrayString
-
-		allString := strings.Join(arrayString, "")
-
-		var record interface{}
-		err := json.Unmarshal([]byte(allString), &record)
-		if err != nil  {
-			record = map[string]interface{}{ "error": "Failed JSON parsing."}
-		}
-
-		rtn["json_stdin"] = record
 	}
 	return rtn
 }
